@@ -1,5 +1,4 @@
 var util = require('util'); 
-
 var my = {};
 
 /**
@@ -20,6 +19,10 @@ var my = {};
 exports.init = function(size, spec) {
   my.spec = spec;
   my.size = size;
+  //
+  // Your Implementation [use util.debug for console debbuging]
+  //
+  return;
 };
 
 /**
@@ -45,28 +48,12 @@ exports.init = function(size, spec) {
  * @return { theta, sigma } control values
  */
 exports.control = function(step, t, ship, ships, missiles) {
-  var theta = undefined;
-  
-  var min = my.spec.HALFSIZE * 2;
-  var evict = null;
-  missiles.forEach(function(m) {
-    var d = Math.sqrt((ship.state.p.x - m.state.p.x) * (ship.state.p.x - m.state.p.x) +
-                      (ship.state.p.y - m.state.p.y) * (ship.state.p.y - m.state.p.y));
-    if(d < min && m.desc.owner !== ship.desc.owner) {
-      min = d;
-      evict = m;
-    }
-  });
-
-  if(evict) {
-    var a = Math.acos(evict.state.v.x / 
-                      (Math.sqrt(Math.exp(evict.state.v.x, 2) + 
-                                 Math.exp(evict.state.v.x, 2))));
-    theta = a + 3 * Math.PI / 4;
-  }
-
+  //
+  // Your Implementation [use util.debug for console debbuging]
+  //
   return { 
-    theta: theta
+    theta: Math.random() * 2 * Math.PI,
+    sigma: Math.random() * 2 * Math.PI
   };
 };
 

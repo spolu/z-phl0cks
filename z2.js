@@ -1,35 +1,17 @@
 var util = require('util'); 
 
-var my = {};
-
 /**
- * --------------
- * Initialization
- * --------------
- *
- *  The `init` function is called with the number of ships active per
- *  phl0cks in this game. The `init` function is a good place to
- *  initialize your data structure and prepare everything for the
- *  first call to control. Any global variable defined here will be
- *  preserved and accessible by the control function at each control
- *  phase.
- *
- * @param size number of ships per phl0ck
- * @param spec specifications of the simulated world
+ * -------
+ * Helpers
+ * -------
  */
-exports.init = function(size, spec) {
-  my.spec = spec;
-  my.size = size;
-};
-
-
 var dist = function(v1, v2) {
   return Math.sqrt((v1.x - v2.x) * (v1.x - v2.x) +
                    (v1.y - v2.y) * (v1.y - v2.y));
 };
 
 var scalar = function(v1, v2) {
-  return v1.x * v2.x + v1.y + v2.y;
+  return v1.x * v2.x + v1.y * v2.y;
 }
 
 var norm = function(v) {
@@ -40,6 +22,30 @@ var angle = function(v1, v2) {
   return Math.acos(scalar(v1, v2) / (norm(v1) * norm(v2)));
 };
 
+var azimut = function(ship, target) {
+  var v = { 
+    x: target.state.p.x - ship.state.p.x,
+    y: target.state.p.y - ship.state.p.y
+  };
+  var t = angle({ x: 1, y: 0 }, v);
+  if(v.y > 0) return t;
+  else return -t;
+};
+
+
+/**
+ * --------------
+ * Initialization
+ * --------------
+ */
+var my = {};
+
+exports.init = function(size, spec) {
+  my.spec = spec;
+  my.size = size;
+};
+
+
 /**
  * -------
  * Control
@@ -49,7 +55,8 @@ exports.control = function(step, t, ship, ships, missiles) {
   var theta = undefined;
   var sigma = undefined;
   
-  var min = my.spec.HALFSIZE * 2;
+
+  var min = my.spec.HALFSIZE / 2;
   var evict = null;
   missiles.forEach(function(m) {
     var d = dist(m.state.p, ship.state.p);
@@ -58,9 +65,20 @@ exports.control = function(step, t, ship, ships, missiles) {
       evict = m;
     }
   });
+  ships.forEach(function(s) {
+    var d = dist(s.state.p, ship.state.p);
+    if(d < min) {
+      min = d;
+      evict = s;
+    }
+  });
 
   if(evict) {
-    theta = azimut(evict) + Math.PI;
+    var a = angle(ship.state.p, evict.state.p);
+    theta = a + 3 * Math.PI / 4;
+    if(scalar(ship.state.v, { x: Math.cos(theta), y: Math.sin(theta) }) > my.spec.MAX_VELOCITY / 4) {
+      theta = a - 3 * Math.PI / 4;
+    }
   }
 
   min = my.spec.HALFSIZE * 2;
@@ -68,14 +86,13 @@ exports.control = function(step, t, ship, ships, missiles) {
   ships.forEach(function(s) {
     var d = dist(s.state.p, ship.state.p);
     if(d < min && s.desc.owner !== ship.desc.owner) {
-      util.debug(s.desc.owner + ' ' + ship.desc.owner);
       min = d;
       target = s;
     }
   });
 
   if(target) {
-    sigma = angle(ship.state.p, target.state.p);
+    sigma = azimut(ship, target);
   }
 
   return { 
