@@ -51,8 +51,18 @@ var sub = function(v1, v2) {
     x: v1.x - v2.x,
     y: v1.y - v2.y
   };
-}
+};
 
+var steer = function(ship, target) {
+  var d = sub(target, ship.state.v);
+  var n = norm(d);
+  var theta = undefined;
+  if(n > 0) {
+    theta = angle({ x: 1, y: 0 }, d);
+    if(d.y < 0) theta = -theta;
+  }
+  return theta;
+};
 
 /**
  * --------------
@@ -64,11 +74,130 @@ var my = {};
 exports.init = function(size, spec) {
   my.spec = spec;
   my.size = size;
-  //
-  // Your Implementation [use util.debug for console debbuging]
-  //
-  return;
+
+  //util.debug(util.inspect(my.spec));
 };
+
+/*
+ * COHESION
+ */
+var cohesion = function(ship, ships) {
+  var sum = { x: 0, y: 0 };
+  var sum_count = 0;
+  ships.forEach(function(s) {
+    var d = dist(s.state.p, ship.state.p);
+    if(s.desc.id !== ship.desc.id && d > 0) {
+      sum = add(sum, s.state.p);
+      sum_count++;
+    }
+  });
+  var cohesion = { x: 0, y: 0 };
+  if(sum_count > 0) {
+    var desired = sub(div(sum, sum_count), ship.state.p);
+    var n = norm(desired);
+    if(n > 0) {
+      cohesion = div(desired, n);
+      //util.debug('COHESION: ' + cohesion.x + ' ' + cohesion.y);
+    }
+  }
+  return cohesion;
+};
+
+/*
+ * SEPARATION
+ */
+var separation = function(ship, ships, missiles) {
+  var closest = undefined;
+  var max = 300;
+  var separation = { x: 0, y: 0 };
+  ships.forEach(function(s) {
+    if(s.desc.id !== ship.desc.id) {
+      var d = dist(s.state.p, ship.state.p);
+      if(d < max) {
+        var v = sub(ship.state.p, s.state.p);
+        separation = add(separation, div(v, d*d / max));
+      }
+    }
+  });
+  missiles.forEach(function(m) {
+    if(m.desc.owner !== ship.desc.owner) {
+      var d = dist(m.state.p, ship.state.p);
+      if(d < max) {
+        var v = sub(ship.state.p, m.state.p);
+        separation = add(separation, div(v, d*d / max));
+      }
+    }
+  });
+  return separation;
+};
+
+/*
+ * ALIGNMENT
+ */
+var alignment = function(ship, ships) {
+  var dir = { x: 0, y: 0 };
+  var dir_count = 0;
+  ships.forEach(function(s) {
+    var d = dist(s.state.p, ship.state.p);
+    if(s.desc.id !== ship.desc.id && s.desc.owner === ship.desc.owner && d > 0) {
+      dir = add(dir, s.state.v);
+      dir_count++;
+    }
+  });
+  var alignment = { x: 0, y: 0 }
+  if(dir_count > 0) {
+    var n = norm(dir);
+    alignment = div(dir, n);
+    //util.debug('ALIGNMENT: ' + alignment.x + ' ' + alignment.y);
+  }
+  return alignment;
+};
+
+/*
+ * CENTER
+ */
+var center = function(ship, ships) {
+  var center = { x: 0, y: 0 };
+  var center_count = 0;
+  ships.forEach(function(s) {
+    if(s.desc.owner === ship.desc.owner) {
+      center = add(center, s.state.p);
+      center_count++;
+    }
+  });
+  //util.debug('CENTER: ' + center.x + ' ' + center.y);
+  return div(center, center_count);
+};
+
+/**
+ * AIM
+ */
+var aim = function(ship, target) {
+  var r = sub(target.state.p, ship.state.p);
+  var dr = sub(target.state.v, ship.state.v);
+  var V = my.spec.MISSILE_VELOCITY;
+  
+  var a = norm(dr)^2 - V^2;
+  var b = 2 * scalar(r,dr);
+  var c = norm(r)^2;
+
+  var delta = b^2 - 4*a*c;
+  if(delta < 0) return null;
+  var ta = (-b - Math.sqrt(delta)) / (2*a);
+  var tb = (-b + Math.sqrt(delta)) / (2*a);
+
+  var t;
+  if(ta < 0 && tb < 0) return null;
+  if(ta < 0 && tb > 0) t = tb;
+  if(ta > 0 && tb < 0) t = ta;
+  if(ta > 0 && tb > 0) t = Math.min(ta, tb);
+
+  var theta = Math.acos((r.x + dr.x * t) / (V*t));
+  if((r.y + dr.y * t) < 0) theta = -theta;
+
+  return theta;
+};
+
 
 /**
  * -------
@@ -79,96 +208,39 @@ exports.control = function(step, t, ship, ships, missiles) {
   var theta = undefined;
   var sigma = undefined;
 
-  /*
-   * COHESION
-   */
-  var sum = { x: 0, y: 0 };
-  var sum_count = 0;
-  ships.forEach(function(s) {
-    var d = dist(s.state.p, ship.state.p);
-    if(s.desc.id !== ship.desc.id && s.desc.owner === ship.desc.owner && d > 0) {
-      sum = add(sum, s.state.p);
-      sum_count++;
-    }
-  });
-  var cohesion = { x: 0, y: 0 };
-  if(sum_count > 0) {
-    var desired = sub(div(sum, sum_count), ship.state.p);
-    var n = norm(desired);
-    
-    if(n > 0) {
-      div(desired, n / my.spec.MAX_VELOCITY);
-      cohesion = sub(desired, ship.state.v);
-      util.debug('COHESION: ' + cohesion.x + ' ' + cohesion.y);
-    }
-  }
 
   /*
-   * SEPARATION
+   * AIMING
    */
-  var mean = { x: 0, y: 0 };
-  var mean_count = 0;
-  ships.forEach(function(s) {
-    var d = dist(s.state.p, ship.state.p);
-    if(s.desc.id !== ship.desc.id && s.desc.owner === ship.desc.owner && d < 500) {
-      var v = sub(ship.state.p, s.state.p);
-      var n = norm(v);
-      mean = add(mean, div(v, n * d));
-      mean_count ++;
-    }
-  });
-  var separation = { x: 0, y: 0 };
-  if(mean_count > 0) {
-    separation = div(mean, mean_count);
-    util.debug('SEPARATION: ' + separation.x + ' ' + separation.y);
-  }
-
-  /*
-   * TRACKING
-   */
-  var center = { x: 0, y: 0 };
-  var center_count = 0;
-  ships.forEach(function(s) {
-    if(s.desc.owner === ship.desc.owner) {
-      util.debug('P: ' + s.state.p.x + ' ' + s.state.p.y);
-      center = add(center, s.state.p);
-      center_count++;
-    }
-  });
-  center = div(center, center_count);
-  util.debug('CENTER: ' + center.x + ' ' + center.y);
+  var ctr = center(ship, ships);
   var closest = undefined;
   var min = my.spec.HALFSIZE * 2;
   ships.forEach(function(s) {
-    var d = dist(s.state.p, center);
+    var d = dist(s.state.p, ctr);
     if(d < min && s.desc.owner !== ship.desc.owner) {
+      sigma = aim(ship, s) || sigma;
       min = d;
-      closest = s.state.p;
     }
   });
-  var tracking = { x: 0, y: 0 };
-  if(closest) {
-    var dir = sub(closest, ship.state.p);
-    var n = norm(dir);
-    tracking = div(dir, n / my.spec.MAX_VELOCITY);
-    util.debug('TRACKING: ' + tracking.x + ' ' + tracking.y);
+
+  var sep = separation(ship, ships, missiles);
+  if(norm(sep) > 0) {
+    theta = steer(ship, sep);
   }
-
-  var steer = { x: 0, y: 0 };
-  steer = add(steer, div(cohesion, 4/3));
-  steer = add(steer, div(separation, 4));
-  steer = add(steer, div(tracking, 2));
-
-  var n = norm(steer);
-
-  if(n > 0) {
-    theta = angle({ x: 1, y: 0 }, steer);
-    if(steer.y < 0) theta = -theta;
+  else {
+    var st = { x: 0, y: 0 };
+    st = add(st, div(cohesion(ship, ships), 10/4));
+    st = add(st, div(alignment(ship, ships), 10/6));
+    var n = norm(st);
+    if(n > 0) {
+      st = div(st, n * 4 / my.spec.MAX_VELOCITY);
+      theta = steer(ship, st);
+    }
   }
 
   return { 
     theta: theta,
-    sigma: Math.random() * 2 * Math.PI
+    sigma: sigma
   };
 };
 
