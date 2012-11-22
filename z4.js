@@ -86,7 +86,7 @@ var cohesion = function(ship, ships) {
   var sum_count = 0;
   ships.forEach(function(s) {
     var d = dist(s.state.p, ship.state.p);
-    if(s.desc.id !== ship.desc.id && d > 0) {
+    if(s.desc.owner === ship.desc.owner && d > 0) {
       sum = add(sum, s.state.p);
       sum_count++;
     }
@@ -108,28 +108,32 @@ var cohesion = function(ship, ships) {
  */
 var separation = function(ship, ships, missiles) {
   var closest = undefined;
-  var max = 300;
+  var max = 200;
   var separation = { x: 0, y: 0 };
   ships.forEach(function(s) {
     if(s.desc.id !== ship.desc.id) {
+      var r = sub(ship.state.p, s.state.p);
+      var dr = sub(ship.state.v, s.state.v);
       var d = dist(s.state.p, ship.state.p);
-      if(d < max) {
-        var v = sub(ship.state.p, s.state.p);
-        separation = add(separation, div(v, d*d / max));
+      if(d < max && scalar(r,dr) < 0) {
+        separation = add(separation, div(r, d*d));
       }
     }
   });
+  max = 400;
   missiles.forEach(function(m) {
     if(m.desc.owner !== ship.desc.owner) {
+      var r = sub(ship.state.p, m.state.p);
+      var dr = sub(ship.state.v, m.state.v);
       var d = dist(m.state.p, ship.state.p);
-      if(d < max) {
-        var v = sub(ship.state.p, m.state.p);
-        separation = add(separation, div(v, d*d / max));
+      if(d < max && scalar(r,dr) < 0) {
+        separation = add(separation, div(r, d*d));
       }
     }
   });
   return separation;
 };
+
 
 /*
  * ALIGNMENT
@@ -238,14 +242,14 @@ exports.control = function(step, t, ship, ships, missiles) {
       }
     });
     if(sigma) {
-      var delta = (0.5 - Math.random()) * Math.PI/12;
+      var delta = (0.5 - Math.random()) * Math.PI/18;
       sigma += delta;
     }
   }
 
   var sep = separation(ship, ships, missiles);
   if(norm(sep) > 0) {
-    theta = steer(ship, sep);
+    theta = steer(ship, div(sep, norm(sep) / my.spec.MAX_VELOCITY));
   }
   else {
     var st = { x: 0, y: 0 };
